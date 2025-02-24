@@ -635,7 +635,7 @@ def parse_ground_truth(example: Dict[str, Any], data_name):
         "gaokao2024_II",
         "imo2024",
     ]:
-        gt_cot, gt_ans = None, example["answer"]
+        gt_cot, gt_ans = example["solution"], example["answer"]
     else:
         raise NotImplementedError(f"`{data_name}`")
     # post process

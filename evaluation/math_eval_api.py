@@ -38,6 +38,23 @@ def parse_args():
         help="Few shot for multiple-choice questions, zero shot for others.",
     )
     parser.add_argument("--num_shots", type=int, default=0)
+    parser.add_argument("--method", default="cot", type=str)
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use local model configuration",
+    )
+    parser.add_argument(
+        "--parallel-execution",
+        action="store_true",
+        help="Use parallel execution for transform and solve steps",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=4,
+        help="Batch size for processing problems",
+    )
     args = parser.parse_args()
 
     return args
@@ -65,6 +82,7 @@ def prepare_data(data_name, args):
         datetime.now().strftime("%Y-%m-%d"), 
         args.exp, 
         data_name,
+        args.method,
         datetime.now().strftime("%H-%M-%S")
     )
     os.makedirs(output_dir, exist_ok=True)
@@ -99,12 +117,98 @@ def is_multi_choice(answer):
             return False
     return True
 
-def construct_messages(example):
-    messages = [
-        {"role": "system", "content": "Please reason step by step, and put your final answer within \\boxed{{}}."},
-        {"role": "user", "content": example["question"]},
-    ]
-    return messages
+def solve_problems(args, samples, output_dir):
+    if args.method == "cot":
+        def construct_messages(question):
+            messages = [
+                {"role": "system", "content": "Please reason step by step, and put your final answer within \\boxed{{}}."},
+                {"role": "user", "content": question},
+            ]
+            return messages
+        # repeat n times
+        prompts = [
+            construct_messages(sample["question"]) for sample in samples for _ in range(args.n_sampling)
+        ]
+        # get all outputs
+        batch_completions = batch_completion(
+            model=args.model,
+            messages=prompts,
+            temperature=args.temperature,
+            stream=False,
+            api_key=args.api_key,
+            api_base=args.base_url,
+        )
+        outputs = [
+            completion.choices[0].message.content 
+            for completion in batch_completions
+        ]
+    elif args.method == "template":
+        from src.tree import Tree 
+
+        local_config = {
+            "api_key": "EMPTY",
+            "base_url": "http://qwen2.5-coder-32b-mindie.test.polaris:8080/v1",
+            "model": "openai/qwen2.5_coder_32b",
+            "temperature": 0.7,
+        }
+
+        llm_config = (
+            local_config
+            if args.local
+            else {
+                "api_key": args.api_key,
+                "base_url": args.base_url,
+                "model": args.model,
+                "temperature": 0.7,
+            }
+        )
+
+        template = Tree(
+            work_dirs=output_dir,
+            template="/root/Projects/meta_r1/MetaCoT/src/templates/msc2020.json",
+            **llm_config,
+            parallel_execution=args.parallel_execution,
+        )
+
+        # Extract all questions and their IDs for batch processing
+        questions_with_ids = [
+            (sample["idx"], sample["question"]) for sample in samples
+        ]
+
+        outputs = []
+        for batch in [
+            questions_with_ids[i : i + args.batch_size]
+            for i in range(0, len(questions_with_ids), args.batch_size)
+        ]:
+            # Process all problems in batches
+            ids, questions = zip(*batch)
+            partial_solutions: List[str] = template(list(questions), problem_ids=list(ids))
+            outputs.extend(partial_solutions)
+        
+        answer_messages = [
+            [{
+                "role": "user", 
+                "content": (
+                    f"Extract the final answer, making sure to obey the formatting instructions.\nSolution:\n{output}\n\n"
+                    "Formatting instructions:\n- Final answer should be wrapped in \\boxed{{}}."
+                )
+            }] for output in outputs
+        ]
+        # get all outputs
+        batch_completions = batch_completion(
+            model=args.model,
+            messages=answer_messages,
+            temperature=args.temperature,
+            stream=False,
+            api_key=args.api_key,
+            api_base=args.base_url,
+        )
+        outputs = [
+            ori_output + "\n\n" + completion.choices[0].message.content 
+            for ori_output, completion in zip(outputs, batch_completions)
+        ]
+
+    return outputs
 
 def main(data_name, args):
     examples, output_dir = prepare_data(data_name, args)
@@ -130,17 +234,11 @@ def main(data_name, args):
         gt_cot, gt_ans = parse_ground_truth(example, data_name)
         example["gt_ans"] = gt_ans
 
-        messages = construct_messages(example)
-
-        if idx == args.start:
-            print(json.dumps(messages, indent=4))
-
         sample = {
             "idx": idx,
             "question": example["question"],
             "gt_cot": gt_cot,
             "gt": gt_ans,
-            "prompt": messages,
         }
 
         # add remain fields
@@ -163,25 +261,8 @@ def main(data_name, args):
             if key in example:
                 sample[key] = example[key]
         samples.append(sample)
-    
 
-    # repeat n times
-    prompts = [
-        sample["prompt"] for sample in samples for _ in range(args.n_sampling)
-    ]
-    # get all outputs
-    batch_completions = batch_completion(
-        model=args.model,
-        messages=prompts,
-        temperature=args.temperature,
-        stream=False,
-        api_key=args.api_key,
-        api_base=args.base_url,
-    )
-    outputs = [
-        completion.choices[0].message.content 
-        for completion in batch_completions
-    ]
+    outputs = solve_problems(args, samples, output_dir)
 
     # extract preds
     results = [
@@ -209,7 +290,6 @@ def main(data_name, args):
                     [c for c in preds[j] if c in ["A", "B", "C", "D", "E"]]
                 )
 
-        sample.pop("prompt")
         sample.update({"output": outputs[i], "pred": preds, "report": reports})
         all_samples.append(sample)
 
