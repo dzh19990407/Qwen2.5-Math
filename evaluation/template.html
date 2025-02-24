@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/texme@1.2.2"></script>
+  <style>
+    body {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    p, li {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-x: auto;
+      outline: 1px solid red;
+    }
+    .katex-display {
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      outline: 1px solid blue;
+    }
+    textarea {
+      max-width: 100%;
+      outline: 1px solid green;
+    }
+  </style>
+</head>
+<textarea>
+{{ content }}
+</textarea>
