@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("--data_names", default="gsm8k,math", type=str)
     parser.add_argument("--data_dir", default="./data", type=str)
     parser.add_argument("--api_key", default="sk-srxmnwhmfdmvuunnvksstijtcydrofpjdokdgfavvjwgaxuj", type=str)
-    parser.add_argument("--model", default="openai/Qwen/Qwen2.5-14B-Instruct", type=str)
+    parser.add_argument("--model", default="openai/Qwen/Qwen2.5-32B-Instruct", type=str)
     parser.add_argument("--base_url", default="https://api.siliconflow.cn/v1", type=str)
     parser.add_argument("--prompt_type", default="qwen25-math-cot", type=str)
     parser.add_argument("--split", default="test", type=str)
