@@ -18,11 +18,11 @@ from jinja2 import Template
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp", default="debug", type=str)
-    parser.add_argument("--data_names", default="gsm8k,math", type=str)
+    parser.add_argument("--data_names", default="aime24", type=str)
     parser.add_argument("--data_dir", default="./data", type=str)
-    parser.add_argument("--api_key", default="sk-srxmnwhmfdmvuunnvksstijtcydrofpjdokdgfavvjwgaxuj", type=str)
-    parser.add_argument("--model", default="openai/Qwen/Qwen2.5-32B-Instruct", type=str)
-    parser.add_argument("--base_url", default="https://api.siliconflow.cn/v1", type=str)
+    parser.add_argument("--api_key", default="sk-7a36616ead50454ca32af213fa5d2533", type=str)
+    parser.add_argument("--model", default="openai/qwen2.5-32b-instruct", type=str)
+    parser.add_argument("--base_url", default="https://dashscope.aliyuncs.com/compatible-mode/v1", type=str)
     parser.add_argument("--prompt_type", default="qwen25-math-cot", type=str)
     parser.add_argument("--split", default="test", type=str)
     parser.add_argument("--num_test_sample", default=-1, type=int)  # -1 for full data
@@ -38,7 +38,7 @@ def parse_args():
         help="Few shot for multiple-choice questions, zero shot for others.",
     )
     parser.add_argument("--num_shots", type=int, default=0)
-    parser.add_argument("--method", default="cot", type=str)
+    parser.add_argument("--method", default="template", choices=["cot", "template"], type=str)
     parser.add_argument(
         "--local",
         action="store_true",
@@ -184,29 +184,6 @@ def solve_problems(args, samples, output_dir):
             ids, questions = zip(*batch)
             partial_solutions: List[str] = template(list(questions), problem_ids=list(ids))
             outputs.extend(partial_solutions)
-        
-        answer_messages = [
-            [{
-                "role": "user", 
-                "content": (
-                    f"Extract the final answer, making sure to obey the formatting instructions.\nSolution:\n{output}\n\n"
-                    "Formatting instructions:\n- Final answer should be wrapped in \\boxed{{}}."
-                )
-            }] for output in outputs
-        ]
-        # get all outputs
-        batch_completions = batch_completion(
-            model=args.model,
-            messages=answer_messages,
-            temperature=args.temperature,
-            stream=False,
-            api_key=args.api_key,
-            api_base=args.base_url,
-        )
-        outputs = [
-            ori_output + "\n\n" + completion.choices[0].message.content 
-            for ori_output, completion in zip(outputs, batch_completions)
-        ]
 
     return outputs
 
